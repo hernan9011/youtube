@@ -18,7 +18,7 @@ app.use(cors());
 
 // Inicializar yt-dlp
 const YTDlpWrap = require('yt-dlp-wrap').default;
-const ytDlpPath = require('yt-dlp-static');
+const ytDlpPath = require('ytdl-core');
 const ytDlpWrap = new YTDlpWrap(ytDlpPath);
 
 /**
