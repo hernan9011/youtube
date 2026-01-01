@@ -29,10 +29,11 @@ app.get('/extract', async (req, res) => {
         // Obtenemos info
         const info = await ytDlpWrap.getVideoInfo([
             videoUrl,
-            '--no-check-certificates',
+            '--cookies', path.join(__dirname, 'cookies.txt'),
             '--no-warnings',
-            '--extractor-args', 'youtube:player_client=android,web' // <--- Intenta esto
-        ]);
+            '--no-check-certificates',
+            '--extractor-args', 'youtube:player_client=android,web'
+        ]);    
 
         const audioFormats = info.formats.filter(f => 
             f.vcodec === 'none' && f.acodec !== 'none'
