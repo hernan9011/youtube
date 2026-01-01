@@ -33,9 +33,12 @@ app.get('/extract', async (req, res) => {
             '--cookies', path.join(__dirname, 'cookies.txt'),
             '--no-warnings',
             '--no-check-certificates',
+            // Este User-Agent es vital para que las cookies funcionen
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             '--extractor-args', 'youtube:player_client=android,web'
         ]);
 
+        
         // Filtramos para obtener solo los que son audio (vcodec === 'none')
         const audioFormats = info.formats.filter(f => 
             f.vcodec === 'none' && f.acodec !== 'none'
