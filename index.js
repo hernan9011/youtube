@@ -26,23 +26,40 @@ app.get('/extract', async (req, res) => {
 
         const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
         
-        // Obtenemos info
-       const info = await ytDlpWrap.getVideoInfo([
+        // Eliminamos el -f de aquí para que nos traiga TODOS los formatos
+        // y nosotros elegimos el mejor en el código de abajo.
+        const info = await ytDlpWrap.getVideoInfo([
             videoUrl,
             '--cookies', path.join(__dirname, 'cookies.txt'),
             '--no-warnings',
             '--no-check-certificates',
-            '--extractor-args', 'youtube:player_client=android,web',
-            '-f', 'bestaudio/best'
+            '--extractor-args', 'youtube:player_client=android,web'
         ]);
-        
+
+        // Filtramos para obtener solo los que son audio (vcodec === 'none')
         const audioFormats = info.formats.filter(f => 
             f.vcodec === 'none' && f.acodec !== 'none'
         );
 
+        // Ordenamos por bitrate (calidad) de mayor a menor
         const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
 
-        if (!bestAudio) return res.status(404).json({ error: 'No se encontró audio' });
+        if (!bestAudio) {
+            // Si no hay formatos de "solo audio", buscamos el formato que tenga el audio más pesado
+            const anyAudio = info.formats.filter(f => f.acodec !== 'none');
+            const fallbackAudio = anyAudio.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+            
+            if (!fallbackAudio) return res.status(404).json({ error: 'No se encontró audio' });
+            
+            return res.json({
+                audioUrl: fallbackAudio.url,
+                title: info.title,
+                artist: info.uploader || info.channel,
+                thumbnail: info.thumbnail,
+                duration: info.duration,
+                format: fallbackAudio.ext
+            });
+        }
 
         res.json({
             audioUrl: bestAudio.url,
