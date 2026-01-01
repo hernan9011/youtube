@@ -25,19 +25,29 @@ const ytDlpPath = path.join(__dirname, 'yt-dlp.exe'); // o simplemente 'yt-dlp' 
 let ytDlpWrap;
 
 async function initYTDlp() {
-    // Si estamos en un entorno Linux (como Render), el binario se llama yt-dlp
-    const binaryPath = path.join(__dirname, 'yt-dlp');
+    const isWindows = process.platform === 'win32';
+    const fileName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+    const binaryPath = path.join(__dirname, fileName);
     
+    // Si el archivo ya existe en Linux, intentamos darle permisos siempre
+    if (fs.existsSync(binaryPath) && !isWindows) {
+        try {
+            fs.chmodSync(binaryPath, '755');
+            console.log('Permisos actualizados a 755');
+        } catch (e) {
+            console.error('No se pudo aplicar chmod:', e);
+        }
+    }
+
     if (!fs.existsSync(binaryPath)) {
-        console.log('Descargando binario de yt-dlp...');
+        console.log(`Descargando binario de yt-dlp...`);
         await YTDlpWrap.downloadFromGithub(binaryPath);
-        fs.chmodSync(binaryPath, '755'); // Dar permisos de ejecución
+        if (!isWindows) fs.chmodSync(binaryPath, '755');
     }
     
     ytDlpWrap = new YTDlpWrap(binaryPath);
-    console.log('yt-dlp listo para usar');
+    console.log('Extractor listo para usar');
 }
-
 initYTDlp().catch(console.error);
 
 app.get('/extract', async (req, res) => {
@@ -83,7 +93,6 @@ app.get('/extract', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
 /**
  * Endpoint alternativo usando ytdl-core (más simple pero menos confiable)
  */
