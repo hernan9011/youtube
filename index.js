@@ -27,14 +27,15 @@ app.get('/extract', async (req, res) => {
         const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
         
         // Obtenemos info
-        const info = await ytDlpWrap.getVideoInfo([
+       const info = await ytDlpWrap.getVideoInfo([
             videoUrl,
             '--cookies', path.join(__dirname, 'cookies.txt'),
             '--no-warnings',
             '--no-check-certificates',
-            '--extractor-args', 'youtube:player_client=android,web'
-        ]);    
-
+            '--extractor-args', 'youtube:player_client=android,web',
+            '-f', 'bestaudio/best'
+        ]);
+        
         const audioFormats = info.formats.filter(f => 
             f.vcodec === 'none' && f.acodec !== 'none'
         );
