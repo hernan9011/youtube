@@ -1,13 +1,3 @@
-/**
- * Backend para extracción de streams de audio de YouTube
- * Usando yt-dlp (recomendado) o ytdl-core
- * 
- * INSTALACIÓN:
- * npm install express yt-dlp-wrap cors
- * 
- * O alternativa:
- * npm install express ytdl-core cors
- */
 const express = require('express');
 const cors = require('cors');
 const YTDlpWrap = require('yt-dlp-wrap').default;
@@ -15,58 +5,32 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Render usa el 10000 por defecto
 
 app.use(cors());
 
-// --- CONFIGURACIÓN CRÍTICA ---
-// En Render, necesitamos descargar el binario de yt-dlp si no existe
-const ytDlpPath = path.join(__dirname, 'yt-dlp.exe'); // o simplemente 'yt-dlp' en Linux
-let ytDlpWrap;
+// --- NUEVA CONFIGURACIÓN ---
+// Definimos la ruta donde Render dejará el archivo (en Linux es yt-dlp a secas)
+const binaryPath = path.join(__dirname, 'yt-dlp');
 
-async function initYTDlp() {
-    const isWindows = process.platform === 'win32';
-    const fileName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
-    const binaryPath = path.join(__dirname, fileName);
-    
-    // Si el archivo ya existe en Linux, intentamos darle permisos siempre
-    if (fs.existsSync(binaryPath) && !isWindows) {
-        try {
-            fs.chmodSync(binaryPath, '755');
-            console.log('Permisos actualizados a 755');
-        } catch (e) {
-            console.error('No se pudo aplicar chmod:', e);
-        }
-    }
+// Creamos la instancia directamente. 
+// Ya NO usamos initYTDlp() ni downloadFromGithub() aquí adentro.
+const ytDlpWrap = new YTDlpWrap(binaryPath);
 
-    if (!fs.existsSync(binaryPath)) {
-        console.log(`Descargando binario de yt-dlp...`);
-        await YTDlpWrap.downloadFromGithub(binaryPath);
-        if (!isWindows) fs.chmodSync(binaryPath, '755');
-    }
-    
-    ytDlpWrap = new YTDlpWrap(binaryPath);
-    console.log('Extractor listo para usar');
-}
-initYTDlp().catch(console.error);
+console.log('Servidor configurado para usar binario en:', binaryPath);
 
 app.get('/extract', async (req, res) => {
     try {
         const videoId = req.query.videoId;
-        if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
-
-        if (!ytDlpWrap) {
-            return res.status(503).json({ error: 'Extractor not ready yet' });
-        }
+        if (!videoId) return res.status(400).json({ error: 'Falta el videoId' });
 
         const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
         
-        // Obtener info (usamos argumentos para evitar restricciones de edad/región)
+        // Obtenemos info
         const info = await ytDlpWrap.getVideoInfo([
             videoUrl,
             '--no-check-certificates',
-            '--no-warnings',
-            '--prefer-free-formats'
+            '--no-warnings'
         ]);
 
         const audioFormats = info.formats.filter(f => 
@@ -75,7 +39,7 @@ app.get('/extract', async (req, res) => {
 
         const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
 
-        if (!bestAudio) return res.status(404).json({ error: 'No audio found' });
+        if (!bestAudio) return res.status(404).json({ error: 'No se encontró audio' });
 
         res.json({
             audioUrl: bestAudio.url,
@@ -87,15 +51,26 @@ app.get('/extract', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Failed to extract', message: error.message });
+        console.error('Error en extracción:', error);
+        res.status(500).json({ error: 'Error al extraer', message: error.message });
     }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-/**
- * Endpoint alternativo usando ytdl-core (más simple pero menos confiable)
- */
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Nota: He quitado el segundo app.listen y los otros endpoints para limpiar el código, 
+// pero puedes agregarlos de nuevo si los necesitas.
+app.listen(PORT, () => {
+    console.log(`YouTube Audio Extractor API corriendo en puerto ${PORT}`);
+});
+
+
+
+
+
+
 app.get('/extract-simple', async (req, res) => {
     try {
         const ytdl = require('ytdl-core');
@@ -147,21 +122,8 @@ app.get('/extract-simple', async (req, res) => {
     }
 });
 
-/**
- * Endpoint de health check
- */
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        service: 'YouTube Audio Extractor',
-        timestamp: new Date().toISOString()
-    });
-});
-
-/**
- * Endpoint para streaming directo (opcional)
- * Permite cachear y servir el audio directamente
- */
+/**  Endpoint para streaming directo (opcional)
+ * Permite cachear y servir el audio directamente */
 app.get('/stream', async (req, res) => {
     try {
         const videoId = req.query.videoId;
