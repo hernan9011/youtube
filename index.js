@@ -8,77 +8,81 @@
  * O alternativa:
  * npm install express ytdl-core cors
  */
-
 const express = require('express');
 const cors = require('cors');
+const YTDlpWrap = require('yt-dlp-wrap').default;
+const path = require('path');
+const fs = require('fs');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Habilitar CORS para peticiones desde Android
+
 app.use(cors());
 
-// Inicializar yt-dlp
-const YTDlpWrap = require('yt-dlp-wrap').default;
-const ytDlpPath = require('ytdl-core');
-const ytDlpWrap = new YTDlpWrap(ytDlpPath);
+// --- CONFIGURACIÓN CRÍTICA ---
+// En Render, necesitamos descargar el binario de yt-dlp si no existe
+const ytDlpPath = path.join(__dirname, 'yt-dlp.exe'); // o simplemente 'yt-dlp' en Linux
+let ytDlpWrap;
 
-/**
- * Endpoint principal: /extract?videoId=XXXX
- * Retorna URL del stream de audio y metadata
- */
+async function initYTDlp() {
+    // Si estamos en un entorno Linux (como Render), el binario se llama yt-dlp
+    const binaryPath = path.join(__dirname, 'yt-dlp');
+    
+    if (!fs.existsSync(binaryPath)) {
+        console.log('Descargando binario de yt-dlp...');
+        await YTDlpWrap.downloadFromGithub(binaryPath);
+        fs.chmodSync(binaryPath, '755'); // Dar permisos de ejecución
+    }
+    
+    ytDlpWrap = new YTDlpWrap(binaryPath);
+    console.log('yt-dlp listo para usar');
+}
+
+initYTDlp().catch(console.error);
+
 app.get('/extract', async (req, res) => {
     try {
         const videoId = req.query.videoId;
-        
-        if (!videoId) {
-            return res.status(400).json({
-                error: 'Missing videoId parameter'
-            });
+        if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+
+        if (!ytDlpWrap) {
+            return res.status(503).json({ error: 'Extractor not ready yet' });
         }
 
         const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        console.log(`Extracting audio for: ${videoId}`);
-
-        // Obtener información del video
-        const info = await ytDlpWrap.getVideoInfo(videoUrl);
         
-        // Encontrar el mejor formato de audio
+        // Obtener info (usamos argumentos para evitar restricciones de edad/región)
+        const info = await ytDlpWrap.getVideoInfo([
+            videoUrl,
+            '--no-check-certificates',
+            '--no-warnings',
+            '--prefer-free-formats'
+        ]);
+
         const audioFormats = info.formats.filter(f => 
             f.vcodec === 'none' && f.acodec !== 'none'
         );
-        
-        // Preferir m4a o webm de alta calidad
-        const bestAudio = audioFormats.sort((a, b) => 
-            (b.abr || 0) - (a.abr || 0)
-        )[0];
 
-        if (!bestAudio) {
-            return res.status(404).json({
-                error: 'No audio stream found'
-            });
-        }
+        const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
 
-        // Construir respuesta
-        const response = {
+        if (!bestAudio) return res.status(404).json({ error: 'No audio found' });
+
+        res.json({
             audioUrl: bestAudio.url,
-            title: info.title || 'YouTube Audio',
-            artist: info.uploader || info.channel || 'Unknown',
-            thumbnail: info.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            duration: info.duration || 0,
-            format: bestAudio.ext,
-            quality: bestAudio.abr || 'unknown'
-        };
-
-        console.log(`Audio extracted successfully: ${response.title}`);
-        res.json(response);
+            title: info.title,
+            artist: info.uploader || info.channel,
+            thumbnail: info.thumbnail,
+            duration: info.duration,
+            format: bestAudio.ext
+        });
 
     } catch (error) {
-        console.error('Extraction error:', error);
-        res.status(500).json({
-            error: 'Failed to extract audio',
-            message: error.message
-        });
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Failed to extract', message: error.message });
     }
 });
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 /**
  * Endpoint alternativo usando ytdl-core (más simple pero menos confiable)
