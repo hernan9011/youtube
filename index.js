@@ -30,7 +30,8 @@ app.get('/extract', async (req, res) => {
         const info = await ytDlpWrap.getVideoInfo([
             videoUrl,
             '--no-check-certificates',
-            '--no-warnings'
+            '--no-warnings',
+            '--extractor-args', 'youtube:player_client=android,web' // <--- Intenta esto
         ]);
 
         const audioFormats = info.formats.filter(f => 
