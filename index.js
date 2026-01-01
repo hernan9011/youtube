@@ -26,43 +26,24 @@ app.get('/extract', async (req, res) => {
 
         const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
         
-        // Eliminamos el -f de aquí para que nos traiga TODOS los formatos
-        // y nosotros elegimos el mejor en el código de abajo.
-        const info = await ytDlpWrap.getVideoInfo([
+        // Usamos .execPromise para tener control TOTAL del comando y evitar el "-f best" automático
+        let stdout = await ytDlpWrap.execPromise([
             videoUrl,
             '--cookies', path.join(__dirname, 'cookies.txt'),
             '--no-warnings',
             '--no-check-certificates',
-            // Este User-Agent es vital para que las cookies funcionen
             '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            '--extractor-args', 'youtube:player_client=android,web'
+            '--extractor-args', 'youtube:player_client=android,web',
+            '--dump-json' // Esto nos devuelve la info sin intentar descargar nada
         ]);
 
-        
-        // Filtramos para obtener solo los que son audio (vcodec === 'none')
-        const audioFormats = info.formats.filter(f => 
-            f.vcodec === 'none' && f.acodec !== 'none'
-        );
+        const info = JSON.parse(stdout);
 
-        // Ordenamos por bitrate (calidad) de mayor a menor
+        // Filtramos para obtener el mejor audio
+        const audioFormats = info.formats.filter(f => f.acodec !== 'none');
         const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
 
-        if (!bestAudio) {
-            // Si no hay formatos de "solo audio", buscamos el formato que tenga el audio más pesado
-            const anyAudio = info.formats.filter(f => f.acodec !== 'none');
-            const fallbackAudio = anyAudio.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-            
-            if (!fallbackAudio) return res.status(404).json({ error: 'No se encontró audio' });
-            
-            return res.json({
-                audioUrl: fallbackAudio.url,
-                title: info.title,
-                artist: info.uploader || info.channel,
-                thumbnail: info.thumbnail,
-                duration: info.duration,
-                format: fallbackAudio.ext
-            });
-        }
+        if (!bestAudio) return res.status(404).json({ error: 'No se encontró audio' });
 
         res.json({
             audioUrl: bestAudio.url,
@@ -74,11 +55,10 @@ app.get('/extract', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error en extracción:', error);
+        console.error('Error:', error);
         res.status(500).json({ error: 'Error al extraer', message: error.message });
     }
 });
-
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
